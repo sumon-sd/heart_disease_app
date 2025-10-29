@@ -5,16 +5,18 @@ import joblib
 import os
 import time
 import plotly.graph_objects as go
+from fpdf import FPDF
+from io import BytesIO
 
 # --------------------------
-# Page config
+# Page Config
 # --------------------------
 st.set_page_config(page_title="❤️ Heart Disease Predictor", layout="wide")
 st.title("❤️ Heart Disease Predictor")
-st.markdown("Enter all patient details below to predict the likelihood of heart disease and see risk factors.")
+st.markdown("Enter patient details to predict heart disease likelihood and generate a professional report.")
 
 # --------------------------
-# Helper to safely load files
+# Load Model & Preprocessing
 # --------------------------
 def safe_load(filename):
     if os.path.exists(filename):
@@ -31,19 +33,18 @@ if model is None or scaler is None or model_columns is None:
     st.stop()
 
 # --------------------------
-# Sidebar Inputs with collapsible sections
+# Sidebar Inputs
 # --------------------------
 st.sidebar.header("Patient Details")
-
 with st.sidebar.expander("Basic Info"):
-    age = st.number_input("Age", 1, 120, 50, help="Patient age in years")
-    sex = st.selectbox("Sex", ["Male", "Female"], help="Patient sex")
+    age = st.number_input("Age", 1, 120, 50)
+    sex = st.selectbox("Sex", ["Male", "Female"])
 
 with st.sidebar.expander("Chest & Heart Info"):
     cp = st.selectbox("Chest Pain Type", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"])
     trestbps = st.number_input("Resting BP (trestbps)", 80, 200, 120)
     chol = st.number_input("Serum Cholesterol (chol)", 100, 600, 200)
-    fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl (fbs)", [0, 1])
+    fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl (fbs)", [0,1])
     restecg = st.selectbox("Resting ECG", ["normal", "st-t abnormality", "left ventricular hypertrophy"])
     thalach = st.number_input("Maximum Heart Rate Achieved (thalach)", 50, 250, 150)
     exang = st.selectbox("Exercise Induced Angina (exang)", [0,1])
@@ -54,7 +55,7 @@ with st.sidebar.expander("Chest & Heart Info"):
     dataset = st.selectbox("Dataset Source", ["Hungary", "Switzerland", "VA Long Beach"])
 
 # --------------------------
-# Prepare input (one-hot encoding)
+# Prepare Input
 # --------------------------
 input_dict = {
     "age": age,
@@ -89,27 +90,26 @@ input_df = input_df.reindex(columns=model_columns, fill_value=0)
 input_scaled = scaler.transform(input_df)
 
 # --------------------------
-# Prediction & Results
+# Predict & Generate
 # --------------------------
-if st.button("Predict"):
-    prediction = model.predict(input_scaled)
+if st.button("Predict & Generate Report"):
+    prediction = model.predict(input_scaled)[0]
     probability = model.predict_proba(input_scaled)[0][1]
     prob_percent = probability*100
 
-    # Prediction card
-    if prediction[0] == 1:
+    # Prediction Card
+    if prediction==1:
         st.markdown(f'<div style="background-color:#ffcccc;padding:15px;border-radius:10px;font-size:18px;">⚠️ Heart Disease Predicted</div>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div style="background-color:#ccffcc;padding:15px;border-radius:10px;font-size:18px;">✅ No Heart Disease</div>', unsafe_allow_html=True)
 
-    # Animated Gauge
+    # Probability Gauge
     st.markdown("### Heart Disease Probability")
     gauge_placeholder = st.empty()
     def get_color(val):
         if val < 30: return "#2ecc71"
         elif val < 70: return "#f1c40f"
         else: return "#e74c3c"
-
     for i in range(0, int(prob_percent)+1):
         color = get_color(i)
         gauge_html = f'''
@@ -137,15 +137,14 @@ if st.button("Predict"):
     # Probability Chart
     st.markdown("### Probability Chart")
     fig = go.Figure(go.Bar(
-        x=["No Heart Disease", "Heart Disease"],
+        x=["No Heart Disease","Heart Disease"],
         y=[100-prob_percent, prob_percent],
-        marker_color=["#2ecc71", "#e74c3c"]
+        marker_color=["#2ecc71","#e74c3c"]
     ))
     fig.update_layout(yaxis=dict(title='Probability (%)', range=[0,100]))
     st.plotly_chart(fig, use_container_width=True)
 
-    # Risk Factors Summary
-    st.markdown("### Key Risk Factors")
+    # Risk Factors
     risk_list = []
     if trestbps>140: risk_list.append("High Blood Pressure")
     if chol>240: risk_list.append("High Cholesterol")
@@ -154,4 +153,40 @@ if st.button("Predict"):
     if fbs==1: risk_list.append("High Fasting Blood Sugar")
     if ca>=2: risk_list.append("Multiple Major Vessels Affected")
     if len(risk_list)==0: risk_list.append("No major risk factors detected")
+    st.markdown("### Key Risk Factors")
     st.write(", ".join(risk_list))
+
+    # Recommendations
+    recommendations = []
+    if trestbps>140: recommendations.append("Maintain healthy BP via diet & exercise")
+    if chol>240: recommendations.append("Reduce cholesterol intake & exercise")
+    if oldpeak>2: recommendations.append("Monitor heart stress & consult doctor")
+    if exang==1: recommendations.append("Include regular cardiac exercise")
+    if fbs==1: recommendations.append("Control fasting blood sugar")
+    if ca>=2: recommendations.append("Consult cardiologist for multiple vessels")
+    if len(recommendations)==0: recommendations.append("Keep maintaining healthy lifestyle")
+    st.markdown("### Recommendations")
+    st.write(", ".join(recommendations))
+
+    # --------------------------
+    # PDF Report
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0,10,"Heart Disease Prediction Report", ln=True, align="C")
+    pdf.ln(5)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0,10,f"Age: {age}", ln=True)
+    pdf.cell(0,10,f"Sex: {sex}", ln=True)
+    pdf.cell(0,10,f"Chest Pain Type: {cp}", ln=True)
+    pdf.cell(0,10,f"Resting BP: {trestbps}", ln=True)
+    pdf.cell(0,10,f"Cholesterol: {chol}", ln=True)
+    pdf.cell(0,10,f"Max Heart Rate: {thalach}", ln=True)
+    pdf.cell(0,10,f"Heart Disease Probability: {prob_percent:.2f}%", ln=True)
+    pdf.cell(0,10,"Risk Factors: " + ", ".join(risk_list), ln=True)
+    pdf.cell(0,10,"Recommendations: " + ", ".join(recommendations), ln=True)
+
+    pdf_output = BytesIO()
+    pdf.output(pdf_output)
+    pdf_output.seek(0)
+    st.download_button("📄 Download PDF Report", data=pdf_output, file_name="Heart_Disease_Report.pdf", mime="application/pdf")
