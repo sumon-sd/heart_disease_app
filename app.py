@@ -4,13 +4,14 @@ import numpy as np
 import joblib
 import os
 import time
+import plotly.graph_objects as go
 
 # --------------------------
 # Page config
 # --------------------------
 st.set_page_config(page_title="❤️ Heart Disease Predictor", layout="wide")
 st.title("❤️ Heart Disease Predictor")
-st.markdown("Enter all patient details below to predict the likelihood of heart disease.")
+st.markdown("Enter all patient details below to predict the likelihood of heart disease and see risk factors.")
 
 # --------------------------
 # Helper to safely load files
@@ -30,27 +31,30 @@ if model is None or scaler is None or model_columns is None:
     st.stop()
 
 # --------------------------
-# Sidebar Inputs (all dataset columns)
+# Sidebar Inputs with collapsible sections
 # --------------------------
 st.sidebar.header("Patient Details")
 
-age = st.sidebar.number_input("Age", 1, 120, 50)
-sex = st.sidebar.selectbox("Sex", ["Male", "Female"])
-cp = st.sidebar.selectbox("Chest Pain Type", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"])
-trestbps = st.sidebar.number_input("Resting Blood Pressure (trestbps)", 80, 200, 120)
-chol = st.sidebar.number_input("Serum Cholesterol (chol)", 100, 600, 200)
-fbs = st.sidebar.selectbox("Fasting Blood Sugar > 120 mg/dl (fbs)", [0, 1])
-restecg = st.sidebar.selectbox("Resting ECG (restecg)", ["normal", "st-t abnormality", "left ventricular hypertrophy"])
-thalach = st.sidebar.number_input("Maximum Heart Rate Achieved (thalach)", 50, 250, 150)
-exang = st.sidebar.selectbox("Exercise Induced Angina (exang)", [0,1])
-oldpeak = st.sidebar.number_input("ST Depression (oldpeak)", 0.0, 10.0, 1.0, step=0.1)
-slope = st.sidebar.selectbox("Slope of ST Segment (slope)", ["upsloping", "flat", "downsloping"])
-ca = st.sidebar.selectbox("Number of Major Vessels (ca)", [0,1,2,3,4])
-thal = st.sidebar.selectbox("Thalassemia (thal)", ["normal", "fixed defect", "reversable defect"])
-dataset = st.sidebar.selectbox("Dataset Source", ["Hungary", "Switzerland", "VA Long Beach"])
+with st.sidebar.expander("Basic Info"):
+    age = st.number_input("Age", 1, 120, 50, help="Patient age in years")
+    sex = st.selectbox("Sex", ["Male", "Female"], help="Patient sex")
+
+with st.sidebar.expander("Chest & Heart Info"):
+    cp = st.selectbox("Chest Pain Type", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"])
+    trestbps = st.number_input("Resting BP (trestbps)", 80, 200, 120)
+    chol = st.number_input("Serum Cholesterol (chol)", 100, 600, 200)
+    fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl (fbs)", [0, 1])
+    restecg = st.selectbox("Resting ECG", ["normal", "st-t abnormality", "left ventricular hypertrophy"])
+    thalach = st.number_input("Maximum Heart Rate Achieved (thalach)", 50, 250, 150)
+    exang = st.selectbox("Exercise Induced Angina (exang)", [0,1])
+    oldpeak = st.number_input("ST Depression (oldpeak)", 0.0, 10.0, 1.0, step=0.1)
+    slope = st.selectbox("Slope of ST Segment", ["upsloping", "flat", "downsloping"])
+    ca = st.selectbox("Number of Major Vessels (ca)", [0,1,2,3,4])
+    thal = st.selectbox("Thalassemia (thal)", ["normal", "fixed defect", "reversable defect"])
+    dataset = st.selectbox("Dataset Source", ["Hungary", "Switzerland", "VA Long Beach"])
 
 # --------------------------
-# Prepare input (one-hot encoding for all categorical features)
+# Prepare input (one-hot encoding)
 # --------------------------
 input_dict = {
     "age": age,
@@ -85,7 +89,7 @@ input_df = input_df.reindex(columns=model_columns, fill_value=0)
 input_scaled = scaler.transform(input_df)
 
 # --------------------------
-# Prediction & Animated Gauge
+# Prediction & Results
 # --------------------------
 if st.button("Predict"):
     prediction = model.predict(input_scaled)
@@ -98,16 +102,13 @@ if st.button("Predict"):
     else:
         st.markdown(f'<div style="background-color:#ccffcc;padding:15px;border-radius:10px;font-size:18px;">✅ No Heart Disease</div>', unsafe_allow_html=True)
 
-    st.markdown("### Heart Disease Probability (Animated & Interactive)")
-
+    # Animated Gauge
+    st.markdown("### Heart Disease Probability")
     gauge_placeholder = st.empty()
     def get_color(val):
-        if val < 30:
-            return "#2ecc71"
-        elif val < 70:
-            return "#f1c40f"
-        else:
-            return "#e74c3c"
+        if val < 30: return "#2ecc71"
+        elif val < 70: return "#f1c40f"
+        else: return "#e74c3c"
 
     for i in range(0, int(prob_percent)+1):
         color = get_color(i)
@@ -132,3 +133,25 @@ if st.button("Predict"):
         '''
         gauge_placeholder.markdown(gauge_html, unsafe_allow_html=True)
         time.sleep(0.01)
+
+    # Probability Chart
+    st.markdown("### Probability Chart")
+    fig = go.Figure(go.Bar(
+        x=["No Heart Disease", "Heart Disease"],
+        y=[100-prob_percent, prob_percent],
+        marker_color=["#2ecc71", "#e74c3c"]
+    ))
+    fig.update_layout(yaxis=dict(title='Probability (%)', range=[0,100]))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Risk Factors Summary
+    st.markdown("### Key Risk Factors")
+    risk_list = []
+    if trestbps>140: risk_list.append("High Blood Pressure")
+    if chol>240: risk_list.append("High Cholesterol")
+    if oldpeak>2: risk_list.append("High ST Depression")
+    if exang==1: risk_list.append("Exercise Induced Angina")
+    if fbs==1: risk_list.append("High Fasting Blood Sugar")
+    if ca>=2: risk_list.append("Multiple Major Vessels Affected")
+    if len(risk_list)==0: risk_list.append("No major risk factors detected")
+    st.write(", ".join(risk_list))
